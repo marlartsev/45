@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>45 / ТЕЛО НЕ СОВПАДАЕТ</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      position: fixed;
+      inset: 0;
+      background: #12060d;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #f3a4cb;
+      overscroll-behavior: none;
+      touch-action: none;
+    }
+
+    #scene {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100dvh;
+      display: block;
+      touch-action: none;
+      background: #12060d;
+    }
+
+    #start {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      padding: max(20px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+      background:
+        radial-gradient(circle at center, rgba(245, 88, 154, 0.18), transparent 44%),
+        linear-gradient(180deg, rgba(18, 6, 13, 0.98), rgba(38, 8, 24, 0.96));
+    }
+
+    #panel {
+      width: min(88vw, 410px);
+      display: grid;
+      gap: 14px;
+      text-align: center;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(58px, 22vw, 108px);
+      line-height: 0.82;
+      font-weight: 900;
+      letter-spacing: -0.105em;
+      transform: translateX(-0.045em);
+      color: #f4a1ca;
+      text-shadow: 0 0 26px rgba(240, 70, 145, 0.38);
+    }
+
+    .subtitle {
+      margin: 0 0 8px;
+      font-size: 13px;
+      line-height: 1.45;
+      color: rgba(255, 204, 229, 0.72);
+    }
+
+    #startBtn,
+    #uploadLabel {
+      width: 100%;
+      min-height: 54px;
+      border-radius: 0;
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      padding: 17px 18px;
+      border: 1px solid rgba(244, 164, 203, 0.82);
+      background: rgba(255, 130, 190, 0.055);
+      color: #f4a4cb;
+      cursor: pointer;
+      text-transform: uppercase;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    #startBtn:active,
+    #uploadLabel:active {
+      background: rgba(255, 130, 190, 0.18);
+      transform: scale(0.99);
+    }
+
+    #imageUpload { display: none; }
+
+    #fileName {
+      min-height: 18px;
+      font-size: 12px;
+      color: rgba(255, 207, 232, 0.58);
+      word-break: break-word;
+    }
+
+    #hud {
+      position: fixed;
+      left: max(12px, env(safe-area-inset-left));
+      right: max(12px, env(safe-area-inset-right));
+      bottom: max(12px, env(safe-area-inset-bottom));
+      z-index: 5;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      pointer-events: none;
+      color: rgba(255, 215, 235, 0.58);
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: 0.045em;
+      text-transform: uppercase;
+      mix-blend-mode: screen;
+    }
+
+    #error {
+      position: fixed;
+      left: 12px;
+      right: 12px;
+      bottom: max(12px, env(safe-area-inset-bottom));
+      z-index: 60;
+      display: none;
+      padding: 12px;
+      background: rgba(20, 0, 10, 0.94);
+      border: 1px solid rgba(255, 140, 190, 0.65);
+      color: #ffd3e8;
+      font-size: 12px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="scene"></canvas>
+
+  <div id="start">
+    <div id="panel">
+      <h1>45</h1>
+      <p class="subtitle">Загрузите изображение. Тяните цифру пальцем: фон, тело, зеркало и форма начнут распадаться вместе.</p>
+
+      <label id="uploadLabel">
+        Загрузить изображение
+        <input id="imageUpload" type="file" accept="image/*" />
+      </label>
+
+      <button id="startBtn">Войти в 45</button>
+      <div id="fileName">Изображение не выбрано</div>
+    </div>
+  </div>
+
+  <div id="hud">
+    <span>тело</span>
+    <span>зеркало</span>
+    <span>невозможная форма</span>
+  </div>
+
+  <div id="error"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+
+  <script>
+    (function () {
+      const errorBox = document.getElementById("error");
+
+      function showError(text) {
+        errorBox.style.display = "block";
+        errorBox.textContent = text;
+      }
+
+      window.addEventListener("error", function (e) {
+        showError("Ошибка:\\n" + e.message + "\\n\\nПроверьте интернет: библиотека Three.js загружается с CDN.");
+      });
+
+      if (!window.THREE) {
+        showError("Three.js не загрузился. Нужен интернет или локальная копия библиотеки.");
+        return;
+      }
+
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
+
+      const canvas = document.getElementById("scene");
+      const start = document.getElementById("start");
+      const startBtn = document.getElementById("startBtn");
+      const imageUpload = document.getElementById("imageUpload");
+      const fileName = document.getElementById("fileName");
+
+      let instability = 0;
+      let targetInstability = 0;
+      let isDragging = false;
+      let lastX = 0;
+      let lastY = 0;
+      let rotationVelocity = 0;
+      let pointerX = 0.5;
+      let pointerY = 0.5;
+      let lastCrackTime = 0;
+
+      const scene = new THREE.Scene();
+
+      const camera = new THREE.PerspectiveCamera(
+        42,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        100
+      );
+      camera.position.z = 8.4;
+
+      const renderer = new THREE.WebGLRenderer({
+        canvas: canvas,
+        antialias: false,
+        powerPreference: "high-performance",
+        alpha: false,
+        stencil: false,
+        depth: true
+      });
+
+      const pixelRatioLimit = isMobile ? 1.25 : 1.5;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, pixelRatioLimit));
+      renderer.setSize(window.innerWidth, window.innerHeight, false);
+
+      const clock = new THREE.Clock();
+
+      function makeDefaultTexture() {
+        const c = document.createElement("canvas");
+        c.width = 720;
+        c.height = 1280;
+        const ctx = c.getContext("2d");
+
+        const g = ctx.createLinearGradient(0, 0, c.width, c.height);
+        g.addColorStop(0, "#170711");
+        g.addColorStop(0.45, "#6f2244");
+        g.addColorStop(1, "#180913");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, c.width, c.height);
+
+        for (let i = 0; i < 5000; i++) {
+          const x = Math.random() * c.width;
+          const y = Math.random() * c.height;
+          const a = Math.random() * 0.13;
+          ctx.fillStyle = "rgba(255,170,210," + a + ")";
+          ctx.fillRect(x, y, Math.random() * 2, Math.random() * 2);
+        }
+
+        ctx.fillStyle = "rgba(255, 110, 170, 0.08)";
+        ctx.font = "900 300px Inter, Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("45", c.width / 2, c.height / 2);
+
+        const tex = new THREE.CanvasTexture(c);
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        return tex;
+      }
+
+      let currentTexture = makeDefaultTexture();
+
+      const bgSegmentsX = isMobile ? 34 : 50;
+      const bgSegmentsY = isMobile ? 60 : 90;
+      const bgGeometry = new THREE.PlaneGeometry(9, 16, bgSegmentsX, bgSegmentsY);
+
+      const bgMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          uTexture: { value: currentTexture },
+          uTime: { value: 0 },
+          uInstability: { value: 0 },
+          uPointer: { value: new THREE.Vector2(0.5, 0.5) }
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          uniform float uTime;
+          uniform float uInstability;
+          uniform vec2 uPointer;
+
+          float random(vec2 p) {
+            return fract(sin(dot(p.xy, vec2(12.9898,78.233))) * 43758.5453123);
+          }
+
+          void main() {
+            vUv = uv;
+            vec3 pos = position;
+
+            float d = distance(uv, uPointer);
+            float pressure = smoothstep(0.34, 0.0, d);
+
+            float n = random(vec2(pos.x * 7.0 + uTime, pos.y * 7.0));
+            pos.x += sin(pos.y * 7.0 + uTime * 1.7) * 0.028 * uInstability;
+            pos.y += cos(pos.x * 5.5 + uTime * 1.2) * 0.028 * uInstability;
+            pos.z += (n * 0.06 + pressure * 0.12) * uInstability;
+
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+          }
+        `,
+        fragmentShader: `
+          precision mediump float;
+
+          varying vec2 vUv;
+          uniform sampler2D uTexture;
+          uniform float uTime;
+          uniform float uInstability;
+          uniform vec2 uPointer;
+
+          float random(vec2 p) {
+            return fract(sin(dot(p.xy, vec2(12.9898,78.233))) * 43758.5453123);
+          }
+
+          void main() {
+            vec2 uv = vUv;
+
+            float d = distance(uv, uPointer);
+            float pressure = smoothstep(0.38, 0.0, d);
+
+            uv.x += sin(uv.y * 20.0 + uTime * 1.7) * 0.009 * uInstability;
+            uv.y += cos(uv.x * 24.0 + uTime * 1.0) * 0.009 * uInstability;
+            uv += normalize(uv - uPointer) * pressure * 0.018 * uInstability;
+
+            vec4 color = texture2D(uTexture, uv);
+
+            float grain = random(uv * 520.0 + uTime);
+            color.rgb += (grain - 0.5) * (0.10 + uInstability * 0.14);
+
+            color.r += 0.075;
+            color.b += 0.025;
+            color.g *= 0.86;
+
+            color.rgb = mix(color.rgb, vec3(0.95, 0.35, 0.65), 0.10 + uInstability * 0.18);
+
+            float vignette = smoothstep(0.83, 0.22, distance(vUv, vec2(0.5)));
+            color.rgb *= 0.66 + vignette * 0.58;
+
+            gl_FragColor = color;
+          }
+        `
+      });
+
+      const bg = new THREE.Mesh(bgGeometry, bgMaterial);
+      bg.position.z = -3;
+      scene.add(bg);
+
+      const ambient = new THREE.AmbientLight(0x71304a, 1.25);
+      scene.add(ambient);
+
+      const light1 = new THREE.PointLight(0xff8ac8, 4.2, 18);
+      light1.position.set(2, 3, 5);
+      scene.add(light1);
+
+      const light2 = new THREE.PointLight(0x441122, 3.2, 18);
+      light2.position.set(-3, -2, 4);
+      scene.add(light2);
+
+      const numberGroup = new THREE.Group();
+      scene.add(numberGroup);
+
+      const numberMaterial = new THREE.MeshStandardMaterial({
+        color: 0xd86a9e,
+        roughness: 0.38,
+        metalness: 0.22,
+        emissive: 0x2b0718,
+        emissiveIntensity: 0.72
+      });
+
+      function addBox(x, y, w, h, r) {
+        const g = new THREE.BoxGeometry(w, h, 0.68, 3, 3, 1);
+        const m = new THREE.Mesh(g, numberMaterial);
+        m.position.set(x, y, 0);
+        m.rotation.z = r || 0;
+        numberGroup.add(m);
+        return m;
+      }
+
+      // Мобильная версия специально использует не TextGeometry, а лёгкую собранную 3D-цифру.
+      addBox(-1.55, 0.30, 0.34, 2.28, 0.00);
+      addBox(-0.88, -0.18, 1.34, 0.34, 0.00);
+      addBox(-0.42, 0.30, 0.34, 2.28, 0.00);
+      addBox(-1.02, 0.70, 1.12, 0.30, -0.72);
+
+      addBox(0.78, 0.88, 1.30, 0.34, 0.00);
+      addBox(0.24, 0.32, 0.34, 1.16, 0.00);
+      addBox(0.78, -0.20, 1.30, 0.34, 0.00);
+      addBox(1.30, -0.76, 0.34, 1.16, 0.00);
+      addBox(0.78, -1.30, 1.30, 0.34, 0.00);
+
+      function distortNumber(t) {
+        numberGroup.children.forEach(function (child, index) {
+          const phase = index * 0.71;
+          child.scale.x = 1 + Math.sin(t * 1.4 + phase) * 0.035 * instability;
+          child.scale.y = 1 + Math.cos(t * 1.8 + phase) * 0.035 * instability;
+          child.position.z = Math.sin(t * 2.1 + phase) * 0.12 * instability;
+          child.rotation.z += Math.sin(t * 2.2 + phase) * 0.0008 * instability;
+        });
+      }
+
+      let audioCtx;
+      let breathOsc;
+      let breathGain;
+      let noiseNode;
+      let noiseGain;
+      let crackGain;
+      let delay;
+      let delayGain;
+      let panner;
+
+      function initAudio() {
+        if (audioCtx) return;
+
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return;
+
+        audioCtx = new AudioContextClass();
+
+        breathOsc = audioCtx.createOscillator();
+        breathGain = audioCtx.createGain();
+
+        breathOsc.type = "sine";
+        breathOsc.frequency.value = 0.42;
+        breathGain.gain.value = 0.028;
+
+        delay = audioCtx.createDelay();
+        delay.delayTime.value = 0.10;
+
+        delayGain = audioCtx.createGain();
+        delayGain.gain.value = 0.028;
+
+        panner = audioCtx.createStereoPanner ? audioCtx.createStereoPanner() : null;
+
+        breathOsc.connect(breathGain);
+
+        if (panner) {
+          breathGain.connect(panner);
+          panner.connect(audioCtx.destination);
+        } else {
+          breathGain.connect(audioCtx.destination);
+        }
+
+        breathGain.connect(delay);
+        delay.connect(delayGain);
+        delayGain.connect(audioCtx.destination);
+
+        breathOsc.start();
+
+        const bufferSize = audioCtx.sampleRate;
+        const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0);
+
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = Math.random() * 2 - 1;
+        }
+
+        noiseNode = audioCtx.createBufferSource();
+        noiseNode.buffer = buffer;
+        noiseNode.loop = true;
+
+        noiseGain = audioCtx.createGain();
+        noiseGain.gain.value = 0.008;
+
+        noiseNode.connect(noiseGain);
+        noiseGain.connect(audioCtx.destination);
+        noiseNode.start();
+
+        crackGain = audioCtx.createGain();
+        crackGain.gain.value = isIOS ? 0.18 : 0.24;
+        crackGain.connect(audioCtx.destination);
+      }
+
+      function playCrack(intensity) {
+        if (!audioCtx || !crackGain) return;
+
+        const now = performance.now();
+        if (now - lastCrackTime < 58) return;
+        lastCrackTime = now;
+
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        const filter = audioCtx.createBiquadFilter();
+
+        osc.type = Math.random() > 0.5 ? "square" : "sawtooth";
+        osc.frequency.value = 80 + Math.random() * 860;
+
+        filter.type = "bandpass";
+        filter.frequency.value = 520 + Math.random() * 2100;
+        filter.Q.value = 7;
+
+        gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.058 * intensity, audioCtx.currentTime + 0.008);
+        gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.065);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(crackGain);
+
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.075);
+      }
+
+      function resizeImageToTexture(img) {
+        const maxSide = isMobile ? 1280 : 1600;
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const w = Math.max(2, Math.round(img.width * scale));
+        const h = Math.max(2, Math.round(img.height * scale));
+
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        const ctx = c.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+
+        const tex = new THREE.CanvasTexture(c);
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.needsUpdate = true;
+        return tex;
+      }
+
+      imageUpload.addEventListener("change", function (e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        fileName.textContent = file.name;
+
+        const reader = new FileReader();
+
+        reader.onload = function (event) {
+          const img = new Image();
+
+          img.onload = function () {
+            const tex = resizeImageToTexture(img);
+
+            if (currentTexture && currentTexture.dispose) currentTexture.dispose();
+            currentTexture = tex;
+
+            bgMaterial.uniforms.uTexture.value = currentTexture;
+            targetInstability = Math.min(1, targetInstability + 0.28);
+          };
+
+          img.src = event.target.result;
+        };
+
+        reader.readAsDataURL(file);
+      });
+
+      startBtn.addEventListener("click", function () {
+        start.style.display = "none";
+        initAudio();
+
+        if (audioCtx && audioCtx.state === "suspended") {
+          audioCtx.resume();
+        }
+      });
+
+      function getPoint(e) {
+        if (e.touches && e.touches.length) {
+          return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+        return { x: e.clientX, y: e.clientY };
+      }
+
+      function pointerDown(e) {
+        if (e.cancelable) e.preventDefault();
+
+        const p = getPoint(e);
+        isDragging = true;
+        lastX = p.x;
+        lastY = p.y;
+        targetInstability = Math.min(1, targetInstability + 0.18);
+        playCrack(0.45);
+      }
+
+      function pointerUp(e) {
+        if (e && e.cancelable) e.preventDefault();
+        isDragging = false;
+      }
+
+      function pointerMove(e) {
+        const p = getPoint(e);
+
+        pointerX = p.x / window.innerWidth;
+        pointerY = 1.0 - p.y / window.innerHeight;
+        bgMaterial.uniforms.uPointer.value.set(pointerX, pointerY);
+
+        if (!isDragging) return;
+        if (e.cancelable) e.preventDefault();
+
+        const dx = p.x - lastX;
+        const dy = p.y - lastY;
+
+        lastX = p.x;
+        lastY = p.y;
+
+        rotationVelocity += dx * 0.0016;
+
+        numberGroup.rotation.y += dx * 0.0048;
+        numberGroup.rotation.x += dy * 0.0034;
+
+        const force = Math.min(1, (Math.abs(dx) + Math.abs(dy)) / 95);
+        targetInstability = Math.min(1, targetInstability + force * 0.075);
+
+        if (force > 0.22 && Math.random() > 0.70) {
+          playCrack(force);
+        }
+      }
+
+      window.addEventListener("touchstart", pointerDown, { passive: false });
+      window.addEventListener("touchend", pointerUp, { passive: false });
+      window.addEventListener("touchcancel", pointerUp, { passive: false });
+      window.addEventListener("touchmove", pointerMove, { passive: false });
+
+      window.addEventListener("mousedown", pointerDown);
+      window.addEventListener("mouseup", pointerUp);
+      window.addEventListener("mousemove", pointerMove);
+
+      function updateSize() {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h, false);
+      }
+
+      window.addEventListener("resize", updateSize);
+      window.addEventListener("orientationchange", function () {
+        setTimeout(updateSize, 250);
+      });
+
+      let lastFrame = 0;
+      const minFrameTime = isMobile ? 1000 / 45 : 1000 / 60;
+
+      function animate(now) {
+        requestAnimationFrame(animate);
+
+        if (now - lastFrame < minFrameTime) return;
+        lastFrame = now;
+
+        const t = clock.getElapsedTime();
+
+        targetInstability *= 0.982;
+        instability += (targetInstability - instability) * 0.065;
+
+        bgMaterial.uniforms.uTime.value = t;
+        bgMaterial.uniforms.uInstability.value = instability;
+
+        camera.position.x = Math.sin(t * 0.22) * 0.09;
+        camera.position.y = Math.cos(t * 0.18) * 0.06;
+        camera.lookAt(0, 0, 0);
+
+        distortNumber(t);
+
+        numberGroup.rotation.z = Math.sin(t * 0.36) * 0.035;
+        numberGroup.rotation.y += rotationVelocity;
+        rotationVelocity *= 0.90;
+
+        numberGroup.scale.x = 1 + Math.sin(t * 1.25) * 0.018 + instability * 0.065;
+        numberGroup.scale.y = 1 + Math.cos(t * 1.05) * 0.018 - instability * 0.025;
+
+        numberGroup.position.x = Math.sin(t * 0.8) * 0.035 * instability;
+        numberGroup.position.y = Math.cos(t * 1.0) * 0.045 * instability;
+
+        numberMaterial.roughness = Math.max(0.18, 0.44 - instability * 0.20);
+        numberMaterial.metalness = 0.18 + instability * 0.44;
+        numberMaterial.emissiveIntensity = 0.62 + instability * 0.95;
+
+        if (audioCtx && breathOsc) {
+          breathOsc.frequency.setTargetAtTime(
+            0.42 + instability * 1.22,
+            audioCtx.currentTime,
+            0.06
+          );
+
+          breathGain.gain.setTargetAtTime(
+            0.026 + instability * 0.065,
+            audioCtx.currentTime,
+            0.06
+          );
+
+          noiseGain.gain.setTargetAtTime(
+            0.008 + instability * 0.035,
+            audioCtx.currentTime,
+            0.08
+          );
+
+          delay.delayTime.setTargetAtTime(
+            0.08 + instability * 0.18,
+            audioCtx.currentTime,
+            0.08
+          );
+
+          delayGain.gain.setTargetAtTime(
+            0.018 + instability * 0.062,
+            audioCtx.currentTime,
+            0.08
+          );
+
+          if (panner) {
+            panner.pan.setTargetAtTime(
+              Math.sin(t * 1.6) * instability * 0.8,
+              audioCtx.currentTime,
+              0.08
+            );
+          }
+        }
+
+        renderer.render(scene, camera);
+      }
+
+      requestAnimationFrame(animate);
+    })();
+  </script>
+</body>
+</html>
