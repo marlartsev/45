@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>45 / ТЕЛО НЕ СОВПАДАЕТ</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      min-height: 100%;
+      overflow: hidden;
+      background: #12060d;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #f4a4cb;
+    }
+
+    body {
+      position: fixed;
+      inset: 0;
+    }
+
+    #scene {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100dvh;
+      display: block;
+      background: #12060d;
+      touch-action: none;
+      z-index: 1;
+    }
+
+    #topPanel {
+      position: fixed;
+      left: max(12px, env(safe-area-inset-left));
+      right: max(12px, env(safe-area-inset-right));
+      top: max(12px, env(safe-area-inset-top));
+      z-index: 20;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      pointer-events: auto;
+    }
+
+    #fileInput {
+      display: none;
+    }
+
+    .btn {
+      min-height: 44px;
+      border: 1px solid rgba(244, 164, 203, 0.82);
+      background: rgba(18, 6, 13, 0.72);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      color: #f4a4cb;
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      text-align: center;
+      border-radius: 0;
+      padding: 13px 10px;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .btn:active {
+      transform: scale(0.985);
+      background: rgba(255, 130, 190, 0.16);
+    }
+
+    #status {
+      position: fixed;
+      left: max(12px, env(safe-area-inset-left));
+      right: max(12px, env(safe-area-inset-right));
+      bottom: max(12px, env(safe-area-inset-bottom));
+      z-index: 15;
+      padding: 9px 10px;
+      background: rgba(18, 6, 13, 0.54);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      color: rgba(255, 214, 235, 0.72);
+      font-size: 10px;
+      line-height: 1.35;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      pointer-events: none;
+      text-align: center;
+    }
+
+    #error {
+      position: fixed;
+      left: 12px;
+      right: 12px;
+      bottom: max(12px, env(safe-area-inset-bottom));
+      z-index: 60;
+      display: none;
+      padding: 12px;
+      background: rgba(20, 0, 10, 0.94);
+      border: 1px solid rgba(255, 140, 190, 0.65);
+      color: #ffd3e8;
+      font-size: 12px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="scene"></canvas>
+
+  <div id="topPanel">
+    <label class="btn" for="fileInput">Загрузить изображение</label>
+    <button class="btn" id="soundBtn" type="button">Включить звук</button>
+    <input id="fileInput" type="file" accept="image/*">
+  </div>
+
+  <div id="status">Тяните цифру пальцем. Изображение меняется через кнопку сверху.</div>
+  <div id="error"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+
+  <script>
+    (function () {
+      const errorBox = document.getElementById("error");
+      const canvas = document.getElementById("scene");
+      const fileInput = document.getElementById("fileInput");
+      const soundBtn = document.getElementById("soundBtn");
+      const status = document.getElementById("status");
+
+      function showError(text) {
+        errorBox.style.display = "block";
+        errorBox.textContent = text;
+      }
+
+      window.addEventListener("error", function (e) {
+        showError("Ошибка:\\n" + e.message + "\\n\\nПроверьте интернет: Three.js загружается с CDN.");
+      });
+
+      if (!window.THREE) {
+        showError("Three.js не загрузился. Нужен интернет.");
+        return;
+      }
+
+      const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
+
+      let instability = 0;
+      let targetInstability = 0;
+      let isDragging = false;
+      let lastX = 0;
+      let lastY = 0;
+      let rotationVelocity = 0;
+      let lastCrackTime = 0;
+
+      const scene = new THREE.Scene();
+
+      const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 100);
+      camera.position.z = 8.4;
+
+      const renderer = new THREE.WebGLRenderer({
+        canvas: canvas,
+        antialias: false,
+        alpha: false,
+        powerPreference: "high-performance"
+      });
+
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.15 : 1.5));
+      renderer.setSize(window.innerWidth, window.innerHeight, false);
+
+      const clock = new THREE.Clock();
+
+      function makeDefaultTexture() {
+        const c = document.createElement("canvas");
+        c.width = 720;
+        c.height = 1280;
+        const ctx = c.getContext("2d");
+
+        const g = ctx.createLinearGradient(0, 0, c.width, c.height);
+        g.addColorStop(0, "#170711");
+        g.addColorStop(0.5, "#712343");
+        g.addColorStop(1, "#180913");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, c.width, c.height);
+
+        for (let i = 0; i < 5200; i++) {
+          ctx.fillStyle = "rgba(255,170,210," + (Math.random() * 0.14) + ")";
+          ctx.fillRect(Math.random() * c.width, Math.random() * c.height, 1.5, 1.5);
+        }
+
+        ctx.fillStyle = "rgba(255,110,170,0.10)";
+        ctx.font = "900 310px Inter, Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("45", c.width / 2, c.height / 2);
+
+        const tex = new THREE.CanvasTexture(c);
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        return tex;
+      }
+
+      let currentTexture = makeDefaultTexture();
+
+      const bgGeometry = new THREE.PlaneGeometry(9, 16, isMobile ? 28 : 42, isMobile ? 50 : 76);
+
+      const bgMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          uTexture: { value: currentTexture },
+          uTime: { value: 0 },
+          uInstability: { value: 0 },
+          uPointer: { value: new THREE.Vector2(0.5, 0.5) }
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          uniform float uTime;
+          uniform float uInstability;
+          uniform vec2 uPointer;
+
+          float random(vec2 p) {
+            return fract(sin(dot(p.xy, vec2(12.9898,78.233))) * 43758.5453123);
+          }
+
+          void main() {
+            vUv = uv;
+            vec3 pos = position;
+            float d = distance(uv, uPointer);
+            float pressure = smoothstep(0.34, 0.0, d);
+            float n = random(vec2(pos.x * 7.0 + uTime, pos.y * 7.0));
+            pos.x += sin(pos.y * 7.0 + uTime * 1.7) * 0.028 * uInstability;
+            pos.y += cos(pos.x * 5.5 + uTime * 1.2) * 0.028 * uInstability;
+            pos.z += (n * 0.06 + pressure * 0.12) * uInstability;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+          }
+        `,
+        fragmentShader: `
+          precision mediump float;
+          varying vec2 vUv;
+          uniform sampler2D uTexture;
+          uniform float uTime;
+          uniform float uInstability;
+          uniform vec2 uPointer;
+
+          float random(vec2 p) {
+            return fract(sin(dot(p.xy, vec2(12.9898,78.233))) * 43758.5453123);
+          }
+
+          void main() {
+            vec2 uv = vUv;
+            float d = distance(uv, uPointer);
+            float pressure = smoothstep(0.38, 0.0, d);
+
+            uv.x += sin(uv.y * 20.0 + uTime * 1.7) * 0.009 * uInstability;
+            uv.y += cos(uv.x * 24.0 + uTime * 1.0) * 0.009 * uInstability;
+            uv += normalize(uv - uPointer) * pressure * 0.018 * uInstability;
+
+            vec4 color = texture2D(uTexture, uv);
+
+            float grain = random(uv * 520.0 + uTime);
+            color.rgb += (grain - 0.5) * (0.10 + uInstability * 0.14);
+
+            color.r += 0.075;
+            color.b += 0.025;
+            color.g *= 0.86;
+            color.rgb = mix(color.rgb, vec3(0.95, 0.35, 0.65), 0.10 + uInstability * 0.18);
+
+            float vignette = smoothstep(0.83, 0.22, distance(vUv, vec2(0.5)));
+            color.rgb *= 0.66 + vignette * 0.58;
+
+            gl_FragColor = color;
+          }
+        `
+      });
+
+      const bg = new THREE.Mesh(bgGeometry, bgMaterial);
+      bg.position.z = -3;
+      scene.add(bg);
+
+      scene.add(new THREE.AmbientLight(0x71304a, 1.25));
+
+      const light1 = new THREE.PointLight(0xff8ac8, 4.2, 18);
+      light1.position.set(2, 3, 5);
+      scene.add(light1);
+
+      const light2 = new THREE.PointLight(0x441122, 3.2, 18);
+      light2.position.set(-3, -2, 4);
+      scene.add(light2);
+
+      const numberGroup = new THREE.Group();
+      scene.add(numberGroup);
+
+      const numberMaterial = new THREE.MeshStandardMaterial({
+        color: 0xd86a9e,
+        roughness: 0.38,
+        metalness: 0.22,
+        emissive: 0x2b0718,
+        emissiveIntensity: 0.72
+      });
+
+      function addBox(x, y, w, h, r) {
+        const g = new THREE.BoxGeometry(w, h, 0.68, 2, 2, 1);
+        const m = new THREE.Mesh(g, numberMaterial);
+        m.position.set(x, y, 0);
+        m.rotation.z = r || 0;
+        numberGroup.add(m);
+      }
+
+      addBox(-1.55, 0.30, 0.34, 2.28, 0.00);
+      addBox(-0.88, -0.18, 1.34, 0.34, 0.00);
+      addBox(-0.42, 0.30, 0.34, 2.28, 0.00);
+      addBox(-1.02, 0.70, 1.12, 0.30, -0.72);
+
+      addBox(0.78, 0.88, 1.30, 0.34, 0.00);
+      addBox(0.24, 0.32, 0.34, 1.16, 0.00);
+      addBox(0.78, -0.20, 1.30, 0.34, 0.00);
+      addBox(1.30, -0.76, 0.34, 1.16, 0.00);
+      addBox(0.78, -1.30, 1.30, 0.34, 0.00);
+
+      function distortNumber(t) {
+        numberGroup.children.forEach(function (child, index) {
+          const phase = index * 0.71;
+          child.scale.x = 1 + Math.sin(t * 1.4 + phase) * 0.035 * instability;
+          child.scale.y = 1 + Math.cos(t * 1.8 + phase) * 0.035 * instability;
+          child.position.z = Math.sin(t * 2.1 + phase) * 0.12 * instability;
+        });
+      }
+
+      function resizeImageToTexture(img) {
+        const maxSide = isMobile ? 1280 : 1600;
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const w = Math.max(2, Math.round(img.width * scale));
+        const h = Math.max(2, Math.round(img.height * scale));
+
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        const ctx = c.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+
+        const tex = new THREE.CanvasTexture(c);
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.needsUpdate = true;
+        return tex;
+      }
+
+      fileInput.addEventListener("change", function () {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) return;
+
+        status.textContent = "Изображение загружается";
+
+        const reader = new FileReader();
+
+        reader.onload = function (event) {
+          const img = new Image();
+
+          img.onload = function () {
+            const tex = resizeImageToTexture(img);
+
+            if (currentTexture && currentTexture.dispose) currentTexture.dispose();
+            currentTexture = tex;
+            bgMaterial.uniforms.uTexture.value = currentTexture;
+
+            targetInstability = Math.min(1, targetInstability + 0.32);
+            status.textContent = "Изображение загружено. Тяните цифру пальцем.";
+          };
+
+          img.onerror = function () {
+            status.textContent = "Не удалось загрузить изображение";
+          };
+
+          img.src = event.target.result;
+        };
+
+        reader.onerror = function () {
+          status.textContent = "Не удалось прочитать файл";
+        };
+
+        reader.readAsDataURL(file);
+      });
+
+      let audioCtx;
+      let breathOsc;
+      let breathGain;
+      let noiseNode;
+      let noiseGain;
+      let crackGain;
+      let delay;
+      let delayGain;
+      let panner;
+
+      function initAudio() {
+        if (audioCtx) return;
+
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) {
+          status.textContent = "Звук не поддерживается этим браузером";
+          return;
+        }
+
+        audioCtx = new AudioContextClass();
+
+        breathOsc = audioCtx.createOscillator();
+        breathGain = audioCtx.createGain();
+        breathOsc.type = "sine";
+        breathOsc.frequency.value = 0.42;
+        breathGain.gain.value = 0.026;
+
+        delay = audioCtx.createDelay();
+        delay.delayTime.value = 0.10;
+        delayGain = audioCtx.createGain();
+        delayGain.gain.value = 0.025;
+        panner = audioCtx.createStereoPanner ? audioCtx.createStereoPanner() : null;
+
+        breathOsc.connect(breathGain);
+
+        if (panner) {
+          breathGain.connect(panner);
+          panner.connect(audioCtx.destination);
+        } else {
+          breathGain.connect(audioCtx.destination);
+        }
+
+        breathGain.connect(delay);
+        delay.connect(delayGain);
+        delayGain.connect(audioCtx.destination);
+        breathOsc.start();
+
+        const bufferSize = audioCtx.sampleRate;
+        const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0);
+
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+        noiseNode = audioCtx.createBufferSource();
+        noiseNode.buffer = buffer;
+        noiseNode.loop = true;
+
+        noiseGain = audioCtx.createGain();
+        noiseGain.gain.value = 0.008;
+
+        noiseNode.connect(noiseGain);
+        noiseGain.connect(audioCtx.destination);
+        noiseNode.start();
+
+        crackGain = audioCtx.createGain();
+        crackGain.gain.value = 0.20;
+        crackGain.connect(audioCtx.destination);
+      }
+
+      function playCrack(intensity) {
+        if (!audioCtx || !crackGain) return;
+
+        const now = performance.now();
+        if (now - lastCrackTime < 65) return;
+        lastCrackTime = now;
+
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        const filter = audioCtx.createBiquadFilter();
+
+        osc.type = Math.random() > 0.5 ? "square" : "sawtooth";
+        osc.frequency.value = 80 + Math.random() * 860;
+
+        filter.type = "bandpass";
+        filter.frequency.value = 520 + Math.random() * 2100;
+        filter.Q.value = 7;
+
+        gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.052 * intensity, audioCtx.currentTime + 0.008);
+        gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.065);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(crackGain);
+
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.075);
+      }
+
+      soundBtn.addEventListener("click", function () {
+        initAudio();
+
+        if (audioCtx && audioCtx.state === "suspended") {
+          audioCtx.resume();
+        }
+
+        soundBtn.textContent = "Звук включён";
+        status.textContent = "Звук включён. Тяните цифру пальцем.";
+        targetInstability = Math.min(1, targetInstability + 0.22);
+        playCrack(0.5);
+      });
+
+      function pointerDown(x, y) {
+        isDragging = true;
+        lastX = x;
+        lastY = y;
+        targetInstability = Math.min(1, targetInstability + 0.18);
+        playCrack(0.45);
+      }
+
+      function pointerUp() {
+        isDragging = false;
+      }
+
+      function pointerMove(x, y) {
+        bgMaterial.uniforms.uPointer.value.set(x / window.innerWidth, 1 - y / window.innerHeight);
+
+        if (!isDragging) return;
+
+        const dx = x - lastX;
+        const dy = y - lastY;
+
+        lastX = x;
+        lastY = y;
+
+        rotationVelocity += dx * 0.0016;
+        numberGroup.rotation.y += dx * 0.0048;
+        numberGroup.rotation.x += dy * 0.0034;
+
+        const force = Math.min(1, (Math.abs(dx) + Math.abs(dy)) / 95);
+        targetInstability = Math.min(1, targetInstability + force * 0.075);
+
+        if (force > 0.22 && Math.random() > 0.72) playCrack(force);
+      }
+
+      canvas.addEventListener("touchstart", function (e) {
+        e.preventDefault();
+        const t = e.touches[0];
+        pointerDown(t.clientX, t.clientY);
+      }, { passive: false });
+
+      canvas.addEventListener("touchmove", function (e) {
+        e.preventDefault();
+        const t = e.touches[0];
+        pointerMove(t.clientX, t.clientY);
+      }, { passive: false });
+
+      canvas.addEventListener("touchend", function (e) {
+        e.preventDefault();
+        pointerUp();
+      }, { passive: false });
+
+      canvas.addEventListener("mousedown", function (e) {
+        pointerDown(e.clientX, e.clientY);
+      });
+
+      window.addEventListener("mousemove", function (e) {
+        pointerMove(e.clientX, e.clientY);
+      });
+
+      window.addEventListener("mouseup", pointerUp);
+
+      function updateSize() {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h, false);
+      }
+
+      window.addEventListener("resize", updateSize);
+      window.addEventListener("orientationchange", function () {
+        setTimeout(updateSize, 250);
+      });
+
+      let lastFrame = 0;
+      const minFrameTime = isMobile ? 1000 / 45 : 1000 / 60;
+
+      function animate(now) {
+        requestAnimationFrame(animate);
+
+        if (now - lastFrame < minFrameTime) return;
+        lastFrame = now;
+
+        const t = clock.getElapsedTime();
+
+        targetInstability *= 0.982;
+        instability += (targetInstability - instability) * 0.065;
+
+        bgMaterial.uniforms.uTime.value = t;
+        bgMaterial.uniforms.uInstability.value = instability;
+
+        camera.position.x = Math.sin(t * 0.22) * 0.09;
+        camera.position.y = Math.cos(t * 0.18) * 0.06;
+        camera.lookAt(0, 0, 0);
+
+        distortNumber(t);
+
+        numberGroup.rotation.z = Math.sin(t * 0.36) * 0.035;
+        numberGroup.rotation.y += rotationVelocity;
+        rotationVelocity *= 0.90;
+
+        numberGroup.scale.x = 1 + Math.sin(t * 1.25) * 0.018 + instability * 0.065;
+        numberGroup.scale.y = 1 + Math.cos(t * 1.05) * 0.018 - instability * 0.025;
+
+        numberMaterial.roughness = Math.max(0.18, 0.44 - instability * 0.20);
+        numberMaterial.metalness = 0.18 + instability * 0.44;
+        numberMaterial.emissiveIntensity = 0.62 + instability * 0.95;
+
+        if (audioCtx && breathOsc) {
+          breathOsc.frequency.setTargetAtTime(0.42 + instability * 1.22, audioCtx.currentTime, 0.06);
+          breathGain.gain.setTargetAtTime(0.026 + instability * 0.065, audioCtx.currentTime, 0.06);
+          noiseGain.gain.setTargetAtTime(0.008 + instability * 0.035, audioCtx.currentTime, 0.08);
+          delay.delayTime.setTargetAtTime(0.08 + instability * 0.18, audioCtx.currentTime, 0.08);
+          delayGain.gain.setTargetAtTime(0.018 + instability * 0.062, audioCtx.currentTime, 0.08);
+
+          if (panner) {
+            panner.pan.setTargetAtTime(Math.sin(t * 1.6) * instability * 0.8, audioCtx.currentTime, 0.08);
+          }
+        }
+
+        renderer.render(scene, camera);
+      }
+
+      requestAnimationFrame(animate);
+    })();
+  </script>
+</body>
+</html>
